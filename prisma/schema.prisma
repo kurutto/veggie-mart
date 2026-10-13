@@ -67,3 +67,367 @@ model Verification {
   @@index([identifier])
   @@map("verification")
 }
+
+// ============================================================
+// Group
+// ============================================================
+
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members       GroupMember[]
+  deliveryAreas DeliveryArea[]
+  timeSlots     DeliveryTimeSlot[]
+
+  products      Product[]
+  orders        Order[]
+
+  discountRules DiscountRule[]
+  settlements   SellerSettlement[]
+
+  @@index([isActive])
+  @@map("group")
+}
+
+// GroupMember
+// 1人のUserが複数Groupに所属できる構造。
+// 将来的に複数地域の利用者・販売者にも対応できる。
+model GroupMember {
+  id       String      @id @default(cuid())
+  groupId  String
+  userId   String
+  role     GroupMemberRole
+  joinedAt DateTime    @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@index([groupId, role])
+  @@map("group_member")
+}
+
+enum GroupMemberRole {
+  BUYER
+  SELLER
+  ADMIN
+}
+
+// ============================================================
+// Buyer / Seller
+// ============================================================
+
+model BuyerProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  postalCode String
+  address   String
+  phone     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("buyer_profile")
+}
+
+model SellerProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  intro     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products Product[]
+  settlements SellerSettlement[]
+
+  @@map("seller_profile")
+}
+
+// ============================================================
+// Product
+// ============================================================
+
+model Product {
+  id          String      @id @default(cuid())
+  groupId     String
+  sellerId    String
+  name        String
+  harvestAt   DateTime
+  comment     String?
+  stock       Int
+  price       Int
+  salesUnitId String
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  group     Group        @relation(fields: [groupId], references: [id])
+  seller    SellerProfile @relation(fields: [sellerId], references: [id])
+  salesUnit SalesUnit    @relation(fields: [salesUnitId], references: [id])
+  images    ProductImage[]
+  orderItems OrderItem[]
+  favorites Favorite[]
+
+  @@index([groupId, isActive])
+  @@index([sellerId, isActive])
+  @@index([name])
+  @@map("product")
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+  @@map("product_image")
+}
+
+// ============================================================
+// Sales Unit
+// 管理者が設定する販売単位・価格単位
+// ============================================================
+
+model SalesUnit {
+  id        String   @id @default(cuid())
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@unique([name])
+  @@map("sales_unit")
+}
+
+// ============================================================
+// Favorite
+// ============================================================
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@map("favorite")
+}
+
+// ============================================================
+// Order
+// ============================================================
+
+model Order {
+  id                  String        @id @default(cuid())
+  groupId             String
+  buyerId             String
+  deliveryTimeSlotId  String
+  status              OrderStatus   @default(PENDING)
+  paymentMethod       PaymentMethod
+  paymentStatus       PaymentStatus @default(PENDING)
+  subtotal            Int
+  discountAmount      Int
+  totalAmount         Int
+  deliveryAddress     String
+  deliveryPostalCode  String
+  deliveryPhone       String
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  group            Group             @relation(fields: [groupId], references: [id])
+  buyer            User              @relation(fields: [buyerId], references: [id])
+  deliveryTimeSlot DeliveryTimeSlot  @relation(fields: [deliveryTimeSlotId], references: [id])
+  items            OrderItem[]
+  delivery         Delivery?
+
+  @@index([groupId, createdAt])
+  @@index([buyerId, createdAt])
+  @@index([status])
+  @@map("order")
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  productId String
+  sellerId  String
+
+  productName String
+  salesUnit   String
+  unitPrice   Int
+  quantity    Int
+  subtotal    Int
+
+  createdAt DateTime @default(now())
+
+  order   Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product       @relation(fields: [productId], references: [id])
+  seller  SellerProfile @relation(fields: [sellerId], references: [id])
+
+  @@index([orderId])
+  @@index([sellerId])
+  @@index([productId])
+  @@map("order_item")
+}
+
+// ============================================================
+// Delivery
+// ============================================================
+
+model Delivery {
+  id              String         @id @default(cuid())
+  orderId         String         @unique
+  status          DeliveryStatus @default(PENDING)
+  deliveryDate    DateTime?
+  deliveredAt     DateTime?
+  note            String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("delivery")
+}
+
+// ============================================================
+// Delivery Area
+// グループごとに配達可能範囲を設定
+// ============================================================
+
+model DeliveryArea {
+  id        String   @id @default(cuid())
+  groupId   String
+  name      String
+  postalCode String?
+  addressPattern String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, isActive])
+  @@map("delivery_area")
+}
+
+// ============================================================
+// Delivery Time Slot
+// グループごとに配達時間帯を設定
+// ============================================================
+
+model DeliveryTimeSlot {
+  id        String   @id @default(cuid())
+  groupId   String
+  name      String
+  startTime String
+  endTime   String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group  Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([groupId, isActive])
+  @@map("delivery_time_slot")
+}
+
+// ============================================================
+// Payment
+// ============================================================
+
+enum PaymentMethod {
+  CASH
+  PAYPAY
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+// ============================================================
+// Order / Delivery Status
+// ============================================================
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  PENDING
+  PREPARING
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+}
+
+// ============================================================
+// Seller Settlement
+// 販売者ごとの売上集計・精算
+// ============================================================
+
+model SellerSettlement {
+  id          String   @id @default(cuid())
+  groupId     String
+  sellerId    String
+  periodStart DateTime
+  periodEnd   DateTime
+  grossSales  Int
+  feeAmount   Int
+  netAmount   Int
+  settledAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  group  Group         @relation(fields: [groupId], references: [id])
+  seller SellerProfile @relation(fields: [sellerId], references: [id])
+
+  @@index([groupId, periodStart, periodEnd])
+  @@index([sellerId, periodStart, periodEnd])
+  @@map("seller_settlement")
+}
+
+// ============================================================
+// Discount Rule
+// ============================================================
+
+model DiscountRule {
+  id            String   @id @default(cuid())
+  groupId       String
+  minimumAmount Int
+  discountRate  Int
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, minimumAmount])
+  @@index([groupId, isActive])
+  @@map("discount_rule")
+}
